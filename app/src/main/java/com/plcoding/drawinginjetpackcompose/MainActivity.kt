@@ -57,47 +57,16 @@ class MainActivity : ComponentActivity() {
                                 .fillMaxWidth()
                                 .weight(1f)
                         )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
-                        ) {
-                            allColors.fastForEach { color ->
-                                val isSelected = state.selectedColor == color
-                                Box(
-                                    modifier = Modifier
-                                        .graphicsLayer {
-                                            val scale = if(isSelected) 1.2f else 1f
-                                            scaleX = scale
-                                            scaleY = scale
-                                        }
-                                        .size(40.dp)
-                                        .clip(CircleShape)
-
-                                        .background(color)
-                                        .border(
-                                            width = 2.dp,
-                                            color = if(isSelected) {
-                                                Color.Black
-                                            } else {
-                                                Color.Transparent
-                                            },
-                                            shape = CircleShape
-                                        )
-                                        .clickable {
-                                            viewModel.onAction(DrawingAction.OnSelectColor(color))
-                                        }
-                                )
-                            }
-                        }
-                        Button(
-                            onClick = {
+                        CanvasControls(
+                            selectedColor = state.selectedColor,
+                            colors = allColors,
+                            onSelectColor = {
+                                viewModel.onAction(DrawingAction.OnSelectColor(it))
+                            },
+                            onClearCanvas = {
                                 viewModel.onAction(DrawingAction.OnClearCanvasClick)
                             }
-                        ) {
-                            Text("Clear Canvas")
-                        }
+                        )
                     }
                 }
             }
