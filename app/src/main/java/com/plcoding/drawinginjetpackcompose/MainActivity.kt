@@ -20,10 +20,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -38,6 +42,8 @@ class MainActivity : ComponentActivity() {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     val viewModel = viewModel<DrawingViewModel>()
                     val state by viewModel.state.collectAsStateWithLifecycle()
+                    var topCanvasSize by remember { mutableStateOf(IntSize.Zero) }
+                    var bottomCanvasSize by remember { mutableStateOf(IntSize.Zero) }
 
                     Column(
                         modifier = Modifier
@@ -50,7 +56,10 @@ class MainActivity : ComponentActivity() {
                                 .weight(1f),
                             state = state,
                             onAction = viewModel::onAction,
-                            position = CanvasPosition.TOP
+                            position = CanvasPosition.TOP,
+                            onCanvasSizeChange = {
+                                topCanvasSize = it
+                            }
                         )
                         Row(
                             horizontalArrangement = Arrangement.Center,
@@ -62,7 +71,7 @@ class MainActivity : ComponentActivity() {
                                 Text("$it%")
                             }
                             Button(onClick = {
-                                viewModel.onAction(DrawingAction.OnCompareDrawingsClick)
+                                viewModel.onAction(DrawingAction.OnCompareDrawingsClick(topCanvasSize.width, topCanvasSize.height))
                             }) {
                                 Text(text = "Compare Drawings")
                             }
@@ -86,7 +95,10 @@ class MainActivity : ComponentActivity() {
                                 .weight(1f),
                             state = state,
                             onAction = viewModel::onAction,
-                            position = CanvasPosition.BOTTOM
+                            position = CanvasPosition.BOTTOM,
+                            onCanvasSizeChange = {
+                                bottomCanvasSize = it
+                            }
                         )
                     }
                 }
@@ -100,6 +112,7 @@ fun CanvasScreen(
     modifier: Modifier = Modifier,
     state: DrawingState,
     onAction: (DrawingAction) -> Unit,
+    onCanvasSizeChange: (IntSize) -> Unit,
     position: CanvasPosition
 ) {
     Column(
@@ -113,7 +126,8 @@ fun CanvasScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            position = position
+            position = position,
+            onSizeChanged = onCanvasSizeChange
         )
         Button(
             onClick = {

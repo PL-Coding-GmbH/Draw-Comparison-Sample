@@ -1,11 +1,22 @@
 package com.plcoding.drawinginjetpackcompose
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.PorterDuff
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.util.fastRoundToInt
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class DrawingState(
     val selectedColor: Color = Color.Black,
@@ -14,17 +25,7 @@ data class DrawingState(
     val topCanvasPaths: List<PathData> = emptyList(),
     val bottomCanvasPaths: List<PathData> = emptyList(),
     val isDrawingsSynced: Boolean = false,
-    val score: Double? = null,
-)
-
-val allColors = listOf(
-    Color.Black,
-    Color.Red,
-    Color.Blue,
-    Color.Green,
-    Color.Yellow,
-    Color.Magenta,
-    Color.Cyan,
+    val score: Int? = null,
 )
 
 data class PathData(
@@ -44,7 +45,7 @@ sealed interface DrawingAction {
     data class OnSelectColor(val color: Color) : DrawingAction
     data class OnClearCanvasClick(val canvasPosition: CanvasPosition) : DrawingAction
     data object OnToggleSyncDrawingClick : DrawingAction
-    data object OnCompareDrawingsClick : DrawingAction
+    data class OnCompareDrawingsClick(val canvasWidth: Int, val canvasHeight: Int) : DrawingAction
 }
 
 class DrawingViewModel : ViewModel() {
@@ -60,89 +61,31 @@ class DrawingViewModel : ViewModel() {
             is DrawingAction.OnPathEnd -> onPathEnd(action.canvasPosition)
             is DrawingAction.OnSelectColor -> onSelectColor(action.color)
             DrawingAction.OnToggleSyncDrawingClick -> onToggleSyncDrawings()
-            DrawingAction.OnCompareDrawingsClick -> {
-                _state.update {
-                    it.copy(
-                        score = computeAccuracyScore()
-                    )
-                }
-            }
+            is DrawingAction.OnCompareDrawingsClick -> compareDrawings(action.canvasWidth, action.canvasHeight)
         }
     }
 
-    fun computeAccuracyScore(
-        dMax: Double = 6.0 // forgiveness level (higher = more forgiving)
-    ): Double {
-        // 1) Gather all top offsets
-        val topOffsets = state.value.topCanvasPaths
-            .flatMap { it.path }  // Flatten all PathData.path lists into one big list
+    private fun compareDrawings(canvasWidth: Int, canvasHeight: Int) = viewModelScope.launch {
+        val coverage = computeBitmapOverlapCoverage(
+            reference = drawPathsToBitmap(
+                width = canvasWidth,
+                height = canvasHeight,
+                paths = _state.value.topCanvasPaths,
+                defaultStrokeWidth = 10f
+            ),
+            user = drawPathsToBitmap(
+                width = canvasWidth,
+                height = canvasHeight,
+                paths = _state.value.bottomCanvasPaths,
+                defaultStrokeWidth = 50f
+            )
+        )
 
-        // 2) Gather all bottom offsets
-        val bottomOffsets = state.value.bottomCanvasPaths
-            .flatMap { it.path }
-
-        val topCount = topOffsets.size
-        val bottomCount = bottomOffsets.size
-
-        // If both lists have the same size, skip resampling:
-        val (topProcessed, bottomProcessed) = if (topCount == bottomCount) {
-            Pair(topOffsets, bottomOffsets)
-        } else {
-            // Otherwise, resample both to some large fixed number, e.g. 500
-            val target = 500
-            val newTop = resamplePath(topOffsets, target)
-            val newBottom = resamplePath(bottomOffsets, target)
-            Pair(newTop, newBottom)
+        _state.update {
+            it.copy(
+                score = (coverage * 100).fastRoundToInt()
+            )
         }
-
-        // Now do Procrustes distance with topProcessed + bottomProcessed
-        val distance = procrustesDistance(topProcessed, bottomProcessed)
-
-        // Convert distance -> 0..100% score
-        return accuracyFromDistance(distance, dMax)
-    }
-
-    private fun resamplePath(points: List<Offset>, targetCount: Int): List<Offset> {
-        if (points.size <= 1 || targetCount <= 1) return points
-
-        // Calculate the cumulative distances between consecutive points
-        val distances = mutableListOf(0f)
-        for (i in 1 until points.size) {
-            val dx = points[i].x - points[i - 1].x
-            val dy = points[i].y - points[i - 1].y
-            distances.add(distances.last() + kotlin.math.hypot(dx, dy))
-        }
-        val totalLength = distances.last()
-
-        // The desired spacing between resampled points
-        val segmentLength = totalLength / (targetCount - 1)
-
-        val resampled = mutableListOf<Offset>()
-        resampled.add(points.first())
-
-        var currentDist = segmentLength
-        var idx = 1
-
-        while (idx < points.size) {
-            if (distances[idx] >= currentDist) {
-                // figure out how far along the segment we should be
-                val ratio = (currentDist - distances[idx - 1]) / (distances[idx] - distances[idx - 1])
-                val px = points[idx - 1].x + ratio * (points[idx].x - points[idx - 1].x)
-                val py = points[idx - 1].y + ratio * (points[idx].y - points[idx - 1].y)
-                resampled.add(Offset(px, py))
-
-                currentDist += segmentLength
-            } else {
-                idx++
-            }
-        }
-
-        // Ensure we add the last point if needed
-        if (resampled.size < targetCount) {
-            resampled.add(points.last())
-        }
-
-        return resampled
     }
 
     private fun onToggleSyncDrawings() {
@@ -285,5 +228,78 @@ class DrawingViewModel : ViewModel() {
                 )
             }
         }
+    }
+
+    private fun drawPathsToBitmap(
+        width: Int,
+        height: Int,
+        paths: List<PathData>,
+        defaultStrokeWidth: Float = 10f
+    ): Bitmap {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        // Clear canvas (set a transparent background)
+        canvas.drawColor(android.graphics.Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
+
+        // Paint for paths
+        val paint = Paint().apply {
+            style = Paint.Style.STROKE
+            strokeWidth = defaultStrokeWidth
+            isAntiAlias = false // Disable anti-aliasing for pixel-accurate comparison
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+
+        // Draw each path to the canvas
+        for (pathData in paths) {
+            paint.color = pathData.color.toArgb() // Use the color from PathData
+            val androidPath = androidx.compose.ui.graphics.Path().apply {
+                val offsets = pathData.path
+                if (offsets.isNotEmpty()) {
+                    moveTo(offsets.first().x, offsets.first().y)
+                    for (i in 1 until offsets.size) {
+                        lineTo(offsets[i].x, offsets[i].y)
+                    }
+                }
+            }.asAndroidPath()
+
+            canvas.drawPath(androidPath, paint)
+        }
+
+        return bitmap
+    }
+
+    private suspend fun computeBitmapOverlapCoverage(
+        reference: Bitmap,
+        user: Bitmap,
+        alphaThreshold: Int = 128 // Pixel "visibility" threshold
+    ): Float = withContext(Dispatchers.IO){
+        require(reference.width == user.width && reference.height == user.height) {
+            "Bitmap sizes must match"
+        }
+
+        var refPixelCount = 0
+        var overlapCount = 0
+
+        for (y in 0 until reference.height) {
+            for (x in 0 until reference.width) {
+                val refPixel = reference.getPixel(x, y)
+                val refAlpha = android.graphics.Color.alpha(refPixel)
+                if (refAlpha > alphaThreshold) {
+                    refPixelCount++
+
+                    // Check for overlap
+                    val userPixel = user.getPixel(x, y)
+                    val userAlpha = android.graphics.Color.alpha(userPixel)
+
+                    if (userAlpha > alphaThreshold) {
+                        overlapCount++
+                    } else println("NOT at ($x, $y)")
+                }
+            }
+        }
+
+        return@withContext if (refPixelCount == 0) 0f else (overlapCount.toFloat() / refPixelCount.toFloat())
     }
 }

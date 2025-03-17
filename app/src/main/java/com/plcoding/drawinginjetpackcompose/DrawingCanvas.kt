@@ -14,6 +14,8 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.util.fastForEach
 import kotlin.math.abs
 
@@ -23,11 +25,15 @@ fun DrawingCanvas(
     currentPath: PathData?,
     onAction: (DrawingAction) -> Unit,
     position: CanvasPosition,
+    onSizeChanged: (IntSize) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Canvas(
         modifier = modifier
             .clipToBounds()
+            .onGloballyPositioned {
+                onSizeChanged(it.size)
+            }
             .background(Color.White)
             .pointerInput(true) {
                 detectDragGestures(
