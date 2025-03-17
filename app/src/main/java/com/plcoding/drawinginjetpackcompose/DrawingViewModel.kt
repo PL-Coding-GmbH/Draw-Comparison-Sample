@@ -13,7 +13,8 @@ data class DrawingState(
     val bottomCurrentPath: PathData? = null,
     val topCanvasPaths: List<PathData> = emptyList(),
     val bottomCanvasPaths: List<PathData> = emptyList(),
-    val isDrawingsSynced: Boolean = false
+    val isDrawingsSynced: Boolean = false,
+    val score: Double? = null,
 )
 
 val allColors = listOf(
@@ -42,7 +43,8 @@ sealed interface DrawingAction {
     data class OnPathEnd(val canvasPosition: CanvasPosition) : DrawingAction
     data class OnSelectColor(val color: Color) : DrawingAction
     data class OnClearCanvasClick(val canvasPosition: CanvasPosition) : DrawingAction
-    data object ToggleSyncDrawing : DrawingAction
+    data object OnToggleSyncDrawingClick : DrawingAction
+    data object OnCompareDrawingsClick : DrawingAction
 }
 
 class DrawingViewModel : ViewModel() {
@@ -57,8 +59,33 @@ class DrawingViewModel : ViewModel() {
             is DrawingAction.OnNewPathStart -> onNewPathStart(action.canvasPosition)
             is DrawingAction.OnPathEnd -> onPathEnd(action.canvasPosition)
             is DrawingAction.OnSelectColor -> onSelectColor(action.color)
-            DrawingAction.ToggleSyncDrawing -> onToggleSyncDrawings()
+            DrawingAction.OnToggleSyncDrawingClick -> onToggleSyncDrawings()
+            DrawingAction.OnCompareDrawingsClick -> {
+                _state.update {
+                    it.copy(
+                        score = computeAccuracyScore()
+                    )
+                }
+            }
         }
+    }
+
+    fun computeAccuracyScore(
+        dMax: Double = 1.0
+    ): Double {
+        // 1) Gather all top offsets
+        val topOffsets = state.value.topCanvasPaths
+            .flatMap { it.path }  // Flatten all PathData.path lists into one big list
+
+        // 2) Gather all bottom offsets
+        val bottomOffsets = state.value.bottomCanvasPaths
+            .flatMap { it.path }
+
+        // 3) Compute the Procrustes distance
+        val distance = procrustesDistance(topOffsets, bottomOffsets)
+
+        // 4) Convert that distance to a 0–100% score
+        return accuracyFromDistance(distance, dMax)
     }
 
     private fun onToggleSyncDrawings() {
@@ -83,7 +110,8 @@ class DrawingViewModel : ViewModel() {
             _state.update {
                 it.copy(
                     topCurrentPath = null,
-                    topCanvasPaths = it.topCanvasPaths + currentPathData
+                    topCanvasPaths = it.topCanvasPaths + currentPathData,
+                    score = null
                 )
             }
         }
@@ -93,7 +121,8 @@ class DrawingViewModel : ViewModel() {
             _state.update {
                 it.copy(
                     bottomCurrentPath = null,
-                    bottomCanvasPaths = it.bottomCanvasPaths + currentPathData
+                    bottomCanvasPaths = it.bottomCanvasPaths + currentPathData,
+                    score = null
                 )
             }
         }
@@ -113,6 +142,7 @@ class DrawingViewModel : ViewModel() {
                         color = it.selectedColor,
                         path = emptyList()
                     ),
+                    score = null
                 )
             }
 
@@ -123,7 +153,8 @@ class DrawingViewModel : ViewModel() {
                             id = System.currentTimeMillis().toString(),
                             color = it.selectedColor,
                             path = emptyList()
-                        )
+                        ),
+                        score = null
                     )
                 }
 
@@ -133,7 +164,8 @@ class DrawingViewModel : ViewModel() {
                         id = System.currentTimeMillis().toString(),
                         color = it.selectedColor,
                         path = emptyList()
-                    )
+                    ),
+                    score = null
                 )
             }
         }
@@ -146,7 +178,8 @@ class DrawingViewModel : ViewModel() {
                 it.copy(
                     topCurrentPath = currentPathData.copy(
                         path = currentPathData.path + offset
-                    )
+                    ),
+                    score = null
                 )
             }
         }
@@ -157,7 +190,8 @@ class DrawingViewModel : ViewModel() {
                 it.copy(
                     bottomCurrentPath = currentPathData.copy(
                         path = currentPathData.path + offset
-                    )
+                    ),
+                    score = null
                 )
             }
         }
@@ -171,7 +205,8 @@ class DrawingViewModel : ViewModel() {
                         topCurrentPath = null,
                         topCanvasPaths = emptyList(),
                         bottomCurrentPath = null,
-                        bottomCanvasPaths = emptyList()
+                        bottomCanvasPaths = emptyList(),
+                        score = null
                     )
                 }
             }
@@ -180,14 +215,16 @@ class DrawingViewModel : ViewModel() {
                 _state.update {
                     it.copy(
                         topCurrentPath = null,
-                        topCanvasPaths = emptyList()
+                        topCanvasPaths = emptyList(),
+                        score = null
                     )
                 }
 
             canvasPosition == CanvasPosition.BOTTOM -> _state.update {
                 it.copy(
                     bottomCurrentPath = null,
-                    bottomCanvasPaths = emptyList()
+                    bottomCanvasPaths = emptyList(),
+                    score = null
                 )
             }
         }

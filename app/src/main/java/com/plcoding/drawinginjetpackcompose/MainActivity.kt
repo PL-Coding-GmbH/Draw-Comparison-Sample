@@ -58,8 +58,16 @@ class MainActivity : ComponentActivity() {
                                 .animateContentSize()
                                 .fillMaxWidth()
                         ) {
+                            state.score?.let {
+                                Text("$it%")
+                            }
                             Button(onClick = {
-                                viewModel.onAction(DrawingAction.ToggleSyncDrawing)
+                                viewModel.onAction(DrawingAction.OnCompareDrawingsClick)
+                            }) {
+                                Text(text = "Compare Drawings")
+                            }
+                            Button(onClick = {
+                                viewModel.onAction(DrawingAction.OnToggleSyncDrawingClick)
                             }) {
                                 Text(text = "Sync Drawings")
                             }
