@@ -22,6 +22,7 @@ fun DrawingCanvas(
     paths: List<PathData>,
     currentPath: PathData?,
     onAction: (DrawingAction) -> Unit,
+    position: CanvasPosition,
     modifier: Modifier = Modifier
 ) {
     Canvas(
@@ -31,16 +32,16 @@ fun DrawingCanvas(
             .pointerInput(true) {
                 detectDragGestures(
                     onDragStart = {
-                        onAction(DrawingAction.OnNewPathStart)
+                        onAction(DrawingAction.OnNewPathStart(position))
                     },
                     onDragEnd = {
-                        onAction(DrawingAction.OnPathEnd)
+                        onAction(DrawingAction.OnPathEnd(position))
                     },
                     onDrag = { change, _ ->
-                        onAction(DrawingAction.OnDraw(change.position))
+                        onAction(DrawingAction.OnDraw(change.position, canvasPosition = position))
                     },
                     onDragCancel = {
-                        onAction(DrawingAction.OnPathEnd)
+                        onAction(DrawingAction.OnPathEnd(position))
                     },
                 )
             }

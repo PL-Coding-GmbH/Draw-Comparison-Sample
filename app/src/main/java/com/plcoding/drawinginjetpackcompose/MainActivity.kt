@@ -4,9 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,10 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.plcoding.drawinginjetpackcompose.ui.theme.DrawingInJetpackComposeTheme
@@ -46,30 +42,77 @@ class MainActivity : ComponentActivity() {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(innerPadding),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                            .padding(innerPadding)
                     ) {
-                        DrawingCanvas(
-                            paths = state.paths,
-                            currentPath = state.currentPath,
-                            onAction = viewModel::onAction,
+                        CanvasScreen(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
+                                .fillMaxSize()
+                                .weight(1f),
+                            state = state,
+                            onAction = viewModel::onAction,
+                            position = CanvasPosition.TOP
                         )
-                        CanvasControls(
-                            selectedColor = state.selectedColor,
-                            colors = allColors,
-                            onSelectColor = {
-                                viewModel.onAction(DrawingAction.OnSelectColor(it))
-                            },
-                            onClearCanvas = {
-                                viewModel.onAction(DrawingAction.OnClearCanvasClick)
+                        Row(
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier
+                                .animateContentSize()
+                                .fillMaxWidth()
+                        ) {
+                            Button(onClick = {
+                                viewModel.onAction(DrawingAction.ToggleSyncDrawing)
+                            }) {
+                                Text(text = "Sync Drawings")
                             }
+                            if(state.isDrawingsSynced) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(15.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Red)
+                                )
+                            }
+                        }
+                        CanvasScreen(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .weight(1f),
+                            state = state,
+                            onAction = viewModel::onAction,
+                            position = CanvasPosition.BOTTOM
                         )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun CanvasScreen(
+    modifier: Modifier = Modifier,
+    state: DrawingState,
+    onAction: (DrawingAction) -> Unit,
+    position: CanvasPosition
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        DrawingCanvas(
+            paths = if (position == CanvasPosition.TOP) state.topCanvasPaths else state.bottomCanvasPaths,
+            currentPath = if (position == CanvasPosition.TOP) state.topCurrentPath else state.bottomCurrentPath,
+            onAction = onAction,
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            position = position
+        )
+        Button(
+            onClick = {
+                onAction(DrawingAction.OnClearCanvasClick(position))
+            }
+        ) {
+            Text("Clear Canvas")
         }
     }
 }
