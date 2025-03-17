@@ -71,7 +71,7 @@ class DrawingViewModel : ViewModel() {
     }
 
     fun computeAccuracyScore(
-        dMax: Double = 1.0
+        dMax: Double = 6.0 // forgiveness level (higher = more forgiving)
     ): Double {
         // 1) Gather all top offsets
         val topOffsets = state.value.topCanvasPaths
@@ -81,11 +81,68 @@ class DrawingViewModel : ViewModel() {
         val bottomOffsets = state.value.bottomCanvasPaths
             .flatMap { it.path }
 
-        // 3) Compute the Procrustes distance
-        val distance = procrustesDistance(topOffsets, bottomOffsets)
+        val topCount = topOffsets.size
+        val bottomCount = bottomOffsets.size
 
-        // 4) Convert that distance to a 0–100% score
+        // If both lists have the same size, skip resampling:
+        val (topProcessed, bottomProcessed) = if (topCount == bottomCount) {
+            Pair(topOffsets, bottomOffsets)
+        } else {
+            // Otherwise, resample both to some large fixed number, e.g. 500
+            val target = 500
+            val newTop = resamplePath(topOffsets, target)
+            val newBottom = resamplePath(bottomOffsets, target)
+            Pair(newTop, newBottom)
+        }
+
+        // Now do Procrustes distance with topProcessed + bottomProcessed
+        val distance = procrustesDistance(topProcessed, bottomProcessed)
+
+        // Convert distance -> 0..100% score
         return accuracyFromDistance(distance, dMax)
+    }
+
+    private fun resamplePath(points: List<Offset>, targetCount: Int): List<Offset> {
+        if (points.size <= 1 || targetCount <= 1) return points
+
+        // Calculate the cumulative distances between consecutive points
+        val distances = mutableListOf(0f)
+        for (i in 1 until points.size) {
+            val dx = points[i].x - points[i - 1].x
+            val dy = points[i].y - points[i - 1].y
+            distances.add(distances.last() + kotlin.math.hypot(dx, dy))
+        }
+        val totalLength = distances.last()
+
+        // The desired spacing between resampled points
+        val segmentLength = totalLength / (targetCount - 1)
+
+        val resampled = mutableListOf<Offset>()
+        resampled.add(points.first())
+
+        var currentDist = segmentLength
+        var idx = 1
+
+        while (idx < points.size) {
+            if (distances[idx] >= currentDist) {
+                // figure out how far along the segment we should be
+                val ratio = (currentDist - distances[idx - 1]) / (distances[idx] - distances[idx - 1])
+                val px = points[idx - 1].x + ratio * (points[idx].x - points[idx - 1].x)
+                val py = points[idx - 1].y + ratio * (points[idx].y - points[idx - 1].y)
+                resampled.add(Offset(px, py))
+
+                currentDist += segmentLength
+            } else {
+                idx++
+            }
+        }
+
+        // Ensure we add the last point if needed
+        if (resampled.size < targetCount) {
+            resampled.add(points.last())
+        }
+
+        return resampled
     }
 
     private fun onToggleSyncDrawings() {
