@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.get
 
 data class DrawingState(
     val selectedColor: Color = Color.Black,
@@ -77,7 +79,7 @@ class DrawingViewModel : ViewModel() {
                 width = canvasWidth,
                 height = canvasHeight,
                 paths = _state.value.bottomCanvasPaths,
-                defaultStrokeWidth = 50f
+                defaultStrokeWidth = 40f
             )
         )
 
@@ -236,7 +238,7 @@ class DrawingViewModel : ViewModel() {
         paths: List<PathData>,
         defaultStrokeWidth: Float = 10f
     ): Bitmap {
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bitmap = createBitmap(width, height)
         val canvas = Canvas(bitmap)
 
         // Clear canvas (set a transparent background)
@@ -253,7 +255,7 @@ class DrawingViewModel : ViewModel() {
 
         // Draw each path to the canvas
         for (pathData in paths) {
-            paint.color = pathData.color.toArgb() // Use the color from PathData
+            paint.color = pathData.color.toArgb()
             val androidPath = androidx.compose.ui.graphics.Path().apply {
                 val offsets = pathData.path
                 if (offsets.isNotEmpty()) {
@@ -274,32 +276,32 @@ class DrawingViewModel : ViewModel() {
         reference: Bitmap,
         user: Bitmap,
         alphaThreshold: Int = 128 // Pixel "visibility" threshold
-    ): Float = withContext(Dispatchers.IO){
+    ): Float = withContext(Dispatchers.IO) {
         require(reference.width == user.width && reference.height == user.height) {
             "Bitmap sizes must match"
         }
 
-        var refPixelCount = 0
-        var overlapCount = 0
+        var visibleReferencePixelCount = 0
+        var overlappingPixelCount = 0
 
-        for (y in 0 until reference.height) {
-            for (x in 0 until reference.width) {
-                val refPixel = reference.getPixel(x, y)
-                val refAlpha = android.graphics.Color.alpha(refPixel)
-                if (refAlpha > alphaThreshold) {
-                    refPixelCount++
-
-                    // Check for overlap
-                    val userPixel = user.getPixel(x, y)
-                    val userAlpha = android.graphics.Color.alpha(userPixel)
-
-                    if (userAlpha > alphaThreshold) {
-                        overlapCount++
-                    } else println("NOT at ($x, $y)")
+        for (row in 0 until reference.height) {
+            for (col in 0 until reference.width) {
+                val referencePixel = reference[col, row]
+                if (isPixelVisible(referencePixel, alphaThreshold)) {
+                    visibleReferencePixelCount++
+                    val userPixel = user[col, row]
+                    if (isPixelVisible(userPixel, alphaThreshold)) {
+                        overlappingPixelCount++
+                    }
                 }
             }
         }
 
-        return@withContext if (refPixelCount == 0) 0f else (overlapCount.toFloat() / refPixelCount.toFloat())
+        return@withContext if (visibleReferencePixelCount == 0) 0f
+        else (overlappingPixelCount.toFloat() / visibleReferencePixelCount.toFloat())
+    }
+
+    private fun isPixelVisible(pixel: Int, alphaThreshold: Int): Boolean {
+        return android.graphics.Color.alpha(pixel) > alphaThreshold
     }
 }
