@@ -40,7 +40,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             DrawingInJetpackComposeTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    val viewModel = viewModel<DrawingViewModel>()
+                    val viewModel = viewModel<DrawingViewModel> {
+                        DrawingViewModel(application)
+                    }
                     val state by viewModel.state.collectAsStateWithLifecycle()
                     var topCanvasSize by remember { mutableStateOf(IntSize.Zero) }
                     var bottomCanvasSize by remember { mutableStateOf(IntSize.Zero) }
