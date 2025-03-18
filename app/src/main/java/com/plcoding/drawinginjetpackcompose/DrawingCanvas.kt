@@ -67,7 +67,7 @@ fun DrawingCanvas(
     }
 }
 
-private fun DrawScope.drawPath(
+fun DrawScope.drawPath(
     path: List<Offset>,
     color: Color,
     thickness: Float = 10f
@@ -76,7 +76,7 @@ private fun DrawScope.drawPath(
         if(path.isNotEmpty()) {
             moveTo(path.first().x, path.first().y)
 
-            val smoothness = 5
+            val smoothness = 0.1
             for(i in 1..path.lastIndex) {
                 val from = path[i - 1]
                 val to = path[i]
