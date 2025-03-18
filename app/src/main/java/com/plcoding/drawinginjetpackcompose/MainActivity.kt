@@ -10,14 +10,11 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -28,7 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -36,7 +32,6 @@ import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.vector.PathParser
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastForEach
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -88,7 +83,7 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier
                                 .fillMaxSize()
                                 .weight(1f),
-                            pathData = state.topCanvasPaths,
+                            pathData = state.referencePath,
                             onCanvasSizeChange = {
                                 topCanvasSize = it
                                 viewModel.onAction(DrawingAction.OnCanvasPrepared(it))
@@ -113,19 +108,6 @@ class MainActivity : ComponentActivity() {
                             }) {
                                 Text(text = "Compare Drawings")
                             }
-                            Button(onClick = {
-                                viewModel.onAction(DrawingAction.OnToggleSyncDrawingClick)
-                            }) {
-                                Text(text = "Sync Drawings")
-                            }
-                            if (state.isDrawingsSynced) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(15.dp)
-                                        .clip(CircleShape)
-                                        .background(Color.Red)
-                                )
-                            }
                         }
                         CanvasScreen(
                             modifier = Modifier
@@ -133,7 +115,6 @@ class MainActivity : ComponentActivity() {
                                 .weight(1f),
                             state = state,
                             onAction = viewModel::onAction,
-                            position = CanvasPosition.BOTTOM,
                             onCanvasSizeChange = {
                                 bottomCanvasSize = it
                             }
@@ -252,25 +233,23 @@ fun CanvasScreen(
     state: DrawingState,
     onAction: (DrawingAction) -> Unit,
     onCanvasSizeChange: (IntSize) -> Unit,
-    position: CanvasPosition
 ) {
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         DrawingCanvas(
-            paths = if (position == CanvasPosition.TOP) state.topCanvasPaths else state.bottomCanvasPaths,
-            currentPath = if (position == CanvasPosition.TOP) state.topCurrentPath else state.bottomCurrentPath,
+            paths = state.userPath,
+            currentPath = state.currentPath,
             onAction = onAction,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            position = position,
             onSizeChanged = onCanvasSizeChange
         )
         Button(
             onClick = {
-                onAction(DrawingAction.OnClearCanvasClick(position))
+                onAction(DrawingAction.OnClearCanvasClick)
             }
         ) {
             Text("Clear Canvas")

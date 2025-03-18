@@ -32,11 +32,9 @@ import kotlin.math.min
 
 data class DrawingState(
     val selectedColor: Color = Color.Black,
-    val topCurrentPath: PathData? = null,
-    val bottomCurrentPath: PathData? = null,
-    val topCanvasPaths: List<PathData> = emptyList(),
-    val bottomCanvasPaths: List<PathData> = emptyList(),
-    val isDrawingsSynced: Boolean = false,
+    val currentPath: PathData? = null,
+    val referencePath: List<PathData> = emptyList(),
+    val userPath: List<PathData> = emptyList(),
     val score: Int? = null,
 )
 
@@ -46,17 +44,12 @@ data class PathData(
     val path: List<Offset>
 )
 
-enum class CanvasPosition {
-    TOP, BOTTOM
-}
-
 sealed interface DrawingAction {
-    data class OnNewPathStart(val canvasPosition: CanvasPosition) : DrawingAction
-    data class OnDraw(val offset: Offset, val canvasPosition: CanvasPosition) : DrawingAction
-    data class OnPathEnd(val canvasPosition: CanvasPosition) : DrawingAction
+    data object OnNewPathStart : DrawingAction
+    data class OnDraw(val offset: Offset) : DrawingAction
+    data object OnPathEnd : DrawingAction
     data class OnSelectColor(val color: Color) : DrawingAction
-    data class OnClearCanvasClick(val canvasPosition: CanvasPosition) : DrawingAction
-    data object OnToggleSyncDrawingClick : DrawingAction
+    data object OnClearCanvasClick : DrawingAction
     data class OnCompareDrawingsClick(val canvasWidth: Int, val canvasHeight: Int) : DrawingAction
     data class OnCanvasPrepared(val size: IntSize) : DrawingAction
 }
@@ -81,7 +74,7 @@ class DrawingViewModel(
                     val path = scalePathsToCanvas(rocket!!, canvasSize)
                     _state.update {
                         it.copy(
-                            topCanvasPaths = path
+                            referencePath = path
                         )
                     }
                 }
@@ -92,12 +85,11 @@ class DrawingViewModel(
 
     fun onAction(action: DrawingAction) {
         when (action) {
-            is DrawingAction.OnClearCanvasClick -> onClearCanvasClick(action.canvasPosition)
-            is DrawingAction.OnDraw -> onDraw(action.offset, action.canvasPosition)
-            is DrawingAction.OnNewPathStart -> onNewPathStart(action.canvasPosition)
-            is DrawingAction.OnPathEnd -> onPathEnd(action.canvasPosition)
+            is DrawingAction.OnClearCanvasClick -> onClearCanvasClick()
+            is DrawingAction.OnDraw -> onDraw(action.offset)
+            is DrawingAction.OnNewPathStart -> onNewPathStart()
+            is DrawingAction.OnPathEnd -> onPathEnd()
             is DrawingAction.OnSelectColor -> onSelectColor(action.color)
-            DrawingAction.OnToggleSyncDrawingClick -> onToggleSyncDrawings()
             is DrawingAction.OnCompareDrawingsClick -> compareDrawings(action.canvasWidth, action.canvasHeight)
             is DrawingAction.OnCanvasPrepared -> canvasSize.update { action.size }
         }
@@ -108,7 +100,7 @@ class DrawingViewModel(
         val referenceStrokeWidth = 100f
         val defaultOffset = (referenceStrokeWidth - userStrokeWidth) / 2f
 
-        val userPaths = _state.value.topCanvasPaths
+        val userPaths = _state.value.referencePath
         val (user, userPathLength) = drawPathsToBitmap(
             width = canvasWidth,
             height = canvasHeight,
@@ -116,7 +108,7 @@ class DrawingViewModel(
             defaultStrokeWidth = userStrokeWidth,
             defaultOffset = defaultOffset
         )
-        val referencePaths = _state.value.bottomCanvasPaths
+        val referencePaths = _state.value.userPath
         val (reference, referencePathLength) = drawPathsToBitmap(
             width = canvasWidth,
             height = canvasHeight,
@@ -224,14 +216,6 @@ class DrawingViewModel(
         }
     }
 
-    private fun onToggleSyncDrawings() {
-        _state.update {
-            it.copy(
-                isDrawingsSynced = !it.isDrawingsSynced
-            )
-        }
-    }
-
     private fun onSelectColor(color: Color) {
         _state.update {
             it.copy(
@@ -240,129 +224,49 @@ class DrawingViewModel(
         }
     }
 
-    private fun onPathEnd(canvasPosition: CanvasPosition) {
-        if (canvasPosition == CanvasPosition.TOP || state.value.isDrawingsSynced) {
-            val currentPathData = state.value.topCurrentPath ?: return
-            _state.update {
-                it.copy(
-                    topCurrentPath = null,
-                    topCanvasPaths = it.topCanvasPaths + currentPathData,
-                    score = null
-                )
-            }
-        }
-
-        if (canvasPosition == CanvasPosition.BOTTOM || state.value.isDrawingsSynced) {
-            val currentPathData = state.value.bottomCurrentPath ?: return
-            _state.update {
-                it.copy(
-                    bottomCurrentPath = null,
-                    bottomCanvasPaths = it.bottomCanvasPaths + currentPathData,
-                    score = null
-                )
-            }
+    private fun onPathEnd() {
+        val currentPathData = state.value.currentPath ?: return
+        _state.update {
+            it.copy(
+                currentPath = null,
+                userPath = it.userPath + currentPathData,
+                score = null
+            )
         }
     }
 
-    private fun onNewPathStart(canvasPosition: CanvasPosition) {
-        when {
-            state.value.isDrawingsSynced -> _state.update {
-                it.copy(
-                    topCurrentPath = PathData(
-                        id = System.currentTimeMillis().toString(),
-                        color = it.selectedColor,
-                        path = emptyList()
-                    ),
-                    bottomCurrentPath = PathData(
-                        id = System.currentTimeMillis().toString(),
-                        color = it.selectedColor,
-                        path = emptyList()
-                    ),
-                    score = null
-                )
-            }
-
-            canvasPosition == CanvasPosition.TOP ->
-                _state.update {
-                    it.copy(
-                        topCurrentPath = PathData(
-                            id = System.currentTimeMillis().toString(),
-                            color = it.selectedColor,
-                            path = emptyList()
-                        ),
-                        score = null
-                    )
-                }
-
-            canvasPosition == CanvasPosition.BOTTOM -> _state.update {
-                it.copy(
-                    bottomCurrentPath = PathData(
-                        id = System.currentTimeMillis().toString(),
-                        color = it.selectedColor,
-                        path = emptyList()
-                    ),
-                    score = null
-                )
-            }
+    private fun onNewPathStart() {
+        _state.update {
+            it.copy(
+                currentPath = PathData(
+                    id = System.currentTimeMillis().toString(),
+                    color = it.selectedColor,
+                    path = emptyList()
+                ),
+                score = null
+            )
         }
     }
 
-    private fun onDraw(offset: Offset, position: CanvasPosition) {
-        if (position == CanvasPosition.TOP || state.value.isDrawingsSynced) {
-            val currentPathData = state.value.topCurrentPath ?: return
-            _state.update {
-                it.copy(
-                    topCurrentPath = currentPathData.copy(
-                        path = currentPathData.path + offset
-                    ),
-                    score = null
-                )
-            }
-        }
-
-        if (position == CanvasPosition.BOTTOM || state.value.isDrawingsSynced) {
-            val currentPathData = state.value.bottomCurrentPath ?: return
-            _state.update {
-                it.copy(
-                    bottomCurrentPath = currentPathData.copy(
-                        path = currentPathData.path + offset
-                    ),
-                    score = null
-                )
-            }
+    private fun onDraw(offset: Offset) {
+        val currentPathData = state.value.currentPath ?: return
+        _state.update {
+            it.copy(
+                currentPath = currentPathData.copy(
+                    path = currentPathData.path + offset
+                ),
+                score = null
+            )
         }
     }
 
-    private fun onClearCanvasClick(canvasPosition: CanvasPosition) {
-        when {
-            state.value.isDrawingsSynced -> {
-                _state.update {
-                    it.copy(
-                        topCurrentPath = null,
-                        topCanvasPaths = emptyList(),
-                        bottomCurrentPath = null,
-                        bottomCanvasPaths = emptyList(),
-                        score = null
-                    )
-                }
-            }
-
-            canvasPosition == CanvasPosition.TOP ->
-                _state.update {
-                    it.copy(
-                        topCurrentPath = null,
-                        topCanvasPaths = emptyList(),
-                        score = null
-                    )
-                }
-
-            canvasPosition == CanvasPosition.BOTTOM -> _state.update {
-                it.copy(
-                    bottomCurrentPath = null,
-                    bottomCanvasPaths = emptyList(),
-                    score = null
-                )
-            }
+    private fun onClearCanvasClick() {
+        _state.update {
+            it.copy(
+                currentPath = null,
+                userPath = emptyList(),
+                score = null
+            )
         }
     }
 
