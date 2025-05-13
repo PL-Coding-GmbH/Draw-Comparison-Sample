@@ -12,6 +12,8 @@ import android.graphics.PorterDuffColorFilter
 import android.graphics.RectF
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.graphics.toAndroidRectF
 import androidx.compose.ui.util.fastRoundToInt
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -72,11 +74,19 @@ class DrawingViewModel(
             is DrawingAction.OnPathEnd -> onPathEnd(action.canvasPosition)
             is DrawingAction.OnSelectColor -> onSelectColor(action.color)
             DrawingAction.OnToggleSyncDrawingClick -> onToggleSyncDrawings()
-            is DrawingAction.OnCompareDrawingsClick -> compareDrawings(action.canvasWidth, action.canvasHeight)
+            is DrawingAction.OnCompareDrawingsClick -> {
+                compareDrawings(
+                    canvasWidth = action.canvasWidth,
+                    canvasHeight = action.canvasHeight,
+                )
+            }
         }
     }
 
-    private fun compareDrawings(canvasWidth: Int, canvasHeight: Int) = viewModelScope.launch {
+    private fun compareDrawings(
+        canvasWidth: Int,
+        canvasHeight: Int,
+    ) = viewModelScope.launch {
         val userStrokeWidth = 10f
         val referenceStrokeWidth = 100f
         val defaultOffset = (referenceStrokeWidth - userStrokeWidth) / 2f
@@ -97,34 +107,10 @@ class DrawingViewModel(
             defaultStrokeWidth = referenceStrokeWidth
         )
 
-        withContext(Dispatchers.IO) {
-            val referenceFile = File(application.filesDir, "reference.png")
-            FileOutputStream(referenceFile).use { outputStream ->
-                user.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-            }
-
-            val userFile = File(application.filesDir, "user.png")
-            FileOutputStream(userFile).use { outputStream ->
-                reference.compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-            }
-
-            val overlayFile = File(application.filesDir, "overlay.png")
-            FileOutputStream(overlayFile).use { outputStream ->
-                getOverlayBitmap(
-                    base = reference,
-                    cover = user
-                ).compress(Bitmap.CompressFormat.PNG, 100, outputStream)
-            }
-        }
-
         val coverage = computeBitmapOverlapCoverage(
             reference = reference,
             user = user
         )
-
-        println("User path length: $userPathLength")
-        println("Reference path length: $referencePathLength")
-        println("Ratio: ${userPathLength / referencePathLength}")
 
         // User path length is at least 70% of reference path length? Don't account for length then.
         // User path length is less than 70% of reference path length? PENALTY!
@@ -142,7 +128,7 @@ class DrawingViewModel(
     }
 
     private fun getOverlayBitmap(base: Bitmap, cover: Bitmap): Bitmap {
-        val output = Bitmap.createBitmap(base.width, base.height, base.config!!)
+        val output = createBitmap(base.width, base.height, base.config!!)
 
         val canvas = Canvas(output)
 
@@ -309,10 +295,8 @@ class DrawingViewModel(
         val bitmap = createBitmap(width, height)
         val canvas = Canvas(bitmap)
 
-        // Clear canvas (set a transparent background)
         canvas.drawColor(android.graphics.Color.TRANSPARENT, PorterDuff.Mode.CLEAR)
 
-        // Paint for paths
         val paint = Paint().apply {
             style = Paint.Style.STROKE
             strokeWidth = defaultStrokeWidth
@@ -324,11 +308,11 @@ class DrawingViewModel(
         val androidPaths = paths.map { it.path.toPath() }
         val bounds = RectF()
         for(path in androidPaths) {
-            val tempBounds = RectF()
-            path.computeBounds(tempBounds, true)
-            bounds.union(tempBounds)
+            val pathBounds = path.asComposePath().getBounds().toAndroidRectF()
+            bounds.union(pathBounds)
         }
 
+        // Normalizes the inset
         bounds.inset(
             -defaultOffset - defaultStrokeWidth / 2f,
             -defaultOffset - defaultStrokeWidth / 2f
@@ -342,7 +326,10 @@ class DrawingViewModel(
         val scale = min(scaleX, scaleY)
 
         val matrix = Matrix().apply {
+            // Normalizes the offset
             preTranslate(-bounds.left, -bounds.top)
+
+            // Normalized the scale
             postScale(scale, scale)
         }
         androidPaths.forEach {
