@@ -14,19 +14,20 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.toAndroidRectF
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.util.fastRoundToInt
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.get
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import androidx.core.graphics.createBitmap
-import androidx.core.graphics.get
-import java.io.File
-import java.io.FileOutputStream
 import kotlin.math.min
 
 data class DrawingState(
@@ -57,14 +58,34 @@ sealed interface DrawingAction {
     data class OnClearCanvasClick(val canvasPosition: CanvasPosition) : DrawingAction
     data object OnToggleSyncDrawingClick : DrawingAction
     data class OnCompareDrawingsClick(val canvasWidth: Int, val canvasHeight: Int) : DrawingAction
+    data class OnCanvasPrepared(val size: IntSize) : DrawingAction
 }
 
-class DrawingViewModel(
-    private val application: Application
-) : ViewModel() {
+class DrawingViewModel : ViewModel() {
 
     private val _state = MutableStateFlow(DrawingState())
     val state = _state.asStateFlow()
+
+    private var canvasSize = MutableStateFlow(IntSize.Zero)
+
+    init {
+        DrawingsRepo
+            .drawings
+            .combine(canvasSize) { drawings, canvasSize ->
+                if (canvasSize == IntSize.Zero) {
+                    return@combine
+                } else {
+                    val rocket = drawings["rocket"]
+                    val path = scalePathsToCanvas(rocket!!, canvasSize)
+                    _state.update {
+                        it.copy(
+                            topCanvasPaths = path
+                        )
+                    }
+                }
+            }
+            .launchIn(viewModelScope)
+    }
 
     fun onAction(action: DrawingAction) {
         when (action) {
@@ -80,6 +101,7 @@ class DrawingViewModel(
                     canvasHeight = action.canvasHeight,
                 )
             }
+            is DrawingAction.OnCanvasPrepared -> canvasSize.update { action.size }
         }
     }
 
@@ -125,22 +147,6 @@ class DrawingViewModel(
                 score = (score * 100).fastRoundToInt()
             )
         }
-    }
-
-    private fun getOverlayBitmap(base: Bitmap, cover: Bitmap): Bitmap {
-        val output = createBitmap(base.width, base.height, base.config!!)
-
-        val canvas = Canvas(output)
-
-        canvas.drawBitmap(base, 0f, 0f, null)
-
-        val paint = Paint().apply {
-            colorFilter = PorterDuffColorFilter(android.graphics.Color.RED, PorterDuff.Mode.SRC_IN)
-        }
-
-        canvas.drawBitmap(cover, 0f, 0f, paint)
-
-        return output
     }
 
     private fun onToggleSyncDrawings() {
@@ -382,6 +388,46 @@ class DrawingViewModel(
 
     private fun isPixelVisible(pixel: Int, alphaThreshold: Int): Boolean {
         return android.graphics.Color.alpha(pixel) > alphaThreshold
+    }
+
+    private fun scalePathsToCanvas(paths: List<PathData>, canvasSize: IntSize, paddingPercent: Float = 0.1f): List<PathData> {
+        if (paths.isEmpty() || canvasSize.width == 0 || canvasSize.height == 0) return paths
+
+        val paddingHeight = canvasSize.height * paddingPercent
+        val paddingWidth = canvasSize.width * paddingPercent
+
+        val allOffsets = paths.flatMap { it.path }
+        val minX = allOffsets.minOfOrNull { it.x } ?: return paths
+        val maxX = allOffsets.maxOfOrNull { it.x } ?: return paths
+        val minY = allOffsets.minOfOrNull { it.y } ?: return paths
+        val maxY = allOffsets.maxOfOrNull { it.y } ?: return paths
+
+        val pathsWidth = maxX - minX
+        val pathsHeight = maxY - minY
+
+        if (pathsWidth <= 0f || pathsHeight <= 0f) return paths
+
+        val scale = minOf(
+            (canvasSize.width - paddingWidth) / pathsWidth,
+            (canvasSize.height - paddingHeight) / pathsHeight
+        )
+
+        val scaledWidth = pathsWidth * scale
+        val scaledHeight = pathsHeight * scale
+
+        val centerX = canvasSize.width / 2f
+        val centerY = canvasSize.height / 2f
+        val translateX = centerX - scaledWidth / 2
+        val translateY = centerY - scaledHeight / 2
+
+        return paths.map { pathData ->
+            val adjustedOffsets = pathData.path.map { offset ->
+                val scaledX = (offset.x - minX) * scale + translateX
+                val scaledY = (offset.y - minY) * scale + translateY
+                Offset(scaledX, scaledY)
+            }
+            pathData.copy(path = adjustedOffsets)
+        }
     }
 }
 

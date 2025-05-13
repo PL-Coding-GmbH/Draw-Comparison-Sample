@@ -22,7 +22,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,22 +30,31 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.plcoding.drawinginjetpackcompose.ui.theme.DrawingInJetpackComposeTheme
 
 class MainActivity : ComponentActivity() {
+
+    val drawableAssetLoader by lazy {
+        DrawableAssetLoader(
+            scope = lifecycleScope,
+            context = this
+        )
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        drawableAssetLoader.loadToPathData()
         setContent {
             DrawingInJetpackComposeTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     val viewModel = viewModel<DrawingViewModel> {
-                        DrawingViewModel(application)
+                        DrawingViewModel()
                     }
                     val state by viewModel.state.collectAsStateWithLifecycle()
                     var topCanvasSize by remember { mutableStateOf(IntSize.Zero) }
@@ -64,8 +72,9 @@ class MainActivity : ComponentActivity() {
                             state = state,
                             onAction = viewModel::onAction,
                             position = CanvasPosition.TOP,
-                            onCanvasSizeChange = {
-                                topCanvasSize = it
+                            onCanvasSizeChange = { canvasSize ->
+                                topCanvasSize = canvasSize
+                                viewModel.onAction(DrawingAction.OnCanvasPrepared(canvasSize))
                             }
                         )
                         Row(
@@ -78,7 +87,12 @@ class MainActivity : ComponentActivity() {
                                 Text("$it%")
                             }
                             Button(onClick = {
-                                viewModel.onAction(DrawingAction.OnCompareDrawingsClick(topCanvasSize.width, topCanvasSize.height))
+                                viewModel.onAction(
+                                    DrawingAction.OnCompareDrawingsClick(
+                                        topCanvasSize.width,
+                                        topCanvasSize.height
+                                    )
+                                )
                             }) {
                                 Text(text = "Compare Drawings")
                             }
@@ -87,7 +101,7 @@ class MainActivity : ComponentActivity() {
                             }) {
                                 Text(text = "Sync Drawings")
                             }
-                            if(state.isDrawingsSynced) {
+                            if (state.isDrawingsSynced) {
                                 Box(
                                     modifier = Modifier
                                         .size(15.dp)
@@ -112,6 +126,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
 }
 
 @Composable
