@@ -95,7 +95,7 @@ private fun DrawScope.drawPath(
     }
     drawPath(
         path = smoothedPath,
-        color = color,
+        brush = RainbowPenBrush,
         style = Stroke(
             width = thickness,
             cap = StrokeCap.Round,
